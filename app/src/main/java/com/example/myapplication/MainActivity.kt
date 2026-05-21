@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.os.Bundle
+import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,6 +20,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.myapplication.ui.theme.MyApplicationTheme
@@ -41,6 +43,7 @@ data class HttpResponse(
 ) {
     val isSuccess get() = errorMessage == null
     val isImage get() = contentType.startsWith("image/")
+    val isHtml get() = contentType.contains("text/html")
     val bodyText get() = bodyBytes?.toString(Charsets.UTF_8) ?: ""
 }
 
@@ -184,7 +187,11 @@ fun HttpTesterScreen() {
 @Composable
 fun ResponseDialog(response: HttpResponse, onDismiss: () -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = if (response.isImage) listOf("原始", "图片", "响应头") else listOf("原始", "JSON", "响应头")
+    val tabs = when {
+        response.isImage -> listOf("原始", "图片", "响应头")
+        response.isHtml  -> listOf("原始", "HTML预览", "响应头")
+        else             -> listOf("原始", "JSON", "响应头")
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -244,7 +251,11 @@ fun ResponseDialog(response: HttpResponse, onDismiss: () -> Unit) {
                 ) {
                     when (selectedTab) {
                         0 -> RawTab(response)
-                        1 -> if (response.isImage) ImageTab(response) else JsonTab(response)
+                        1 -> when {
+                            response.isImage -> ImageTab(response)
+                            response.isHtml  -> HtmlTab(response)
+                            else             -> JsonTab(response)
+                        }
                         2 -> HeadersTab(response)
                     }
                 }
@@ -340,6 +351,29 @@ fun ImageTab(response: HttpResponse) {
             Text("无图片数据", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+@Composable
+fun HtmlTab(response: HttpResponse) {
+    val html = if (response.isSuccess) {
+        response.bodyText.ifEmpty { "<p>（响应体为空）</p>" }
+    } else {
+        "<p>错误: ${response.errorMessage}</p>"
+    }
+
+    AndroidView(
+        factory = { context ->
+            WebView(context).apply {
+                settings.javaScriptEnabled = false
+                settings.loadWithOverviewMode = true
+                settings.useWideViewPort = true
+            }
+        },
+        update = { webView ->
+            webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+        },
+        modifier = Modifier.fillMaxSize()
+    )
 }
 
 @Composable
